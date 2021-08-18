@@ -47,14 +47,17 @@ stopifnot(identical(anno$Name, colnames(GT)))
 # Fix sample names --------------------------------------------------------
 fixNameDT <- read_tsv(path(path_dir(resDir), "Heatmap", "fixNames.tsv"))
 foo <- left_join(anno, fixNameDT,
-                 by=c("PatientID [Factor]"="Patient ID on transcriptomics heatmap"))
-annotation_col <- data.frame(row.names = foo$Name,
-                             "cell type"=sub(".*(NO|HU)_", "", foo$`Condition [Factor]`),
-                             "class therapy progressed"=paste(recode(sub("_.*$", "", foo$`Condition [Factor]`), c="control", p="patient"),
-                                                              sub("_.*$", "", sub("(p|c)_", "", foo$`Condition [Factor]`)),
-                                                              foo$Progressed, sep="."),
-                             "patient ID"=foo$`Patient ID, final nomenclature`,
-                             check.names = FALSE)
+                 by = c("PatientID [Factor]" = "Patient ID on transcriptomics heatmap"))
+annotation_col <- data.frame(
+  row.names = foo$Name,
+  "cell type" = sub(".*(NO|HU)_", "", foo$`Condition [Factor]`),
+  "class therapy progressed" = paste(recode(sub("_.*$", "", foo$`Condition [Factor]`),
+                                            c="control", p="patient"),
+                                     sub("_.*$", "",  sub("(p|c)_", "", foo$`Condition [Factor]`)),
+                                     foo$Progressed,
+                                     sep="."),
+  "patient ID" = foo$`Patient ID, final nomenclature`,
+  check.names = FALSE)
 annotation_col$name <- paste(annotation_col$`cell type`,
                              annotation_col$`class therapy progressed`,
                              annotation_col$`patient ID`, sep="~")
@@ -65,22 +68,32 @@ library(ComplexHeatmap)
 library(RColorBrewer)
 library(cowplot)
 textCols <- rep("black", nrow(GT))
-textCols[grep("(COSM28043|COSM5945302|COSM28040|COSM1594211|COSM3760322|COSM1673705)", rownames(GT))] <- "blue"
+textCols[grep("(COSM28043|COSM5945302|COSM28040|COSM1594211|COSM3760322|COSM1673705)",
+              rownames(GT))] <- "blue"
 textCols[grep("(COSM1737944|COSM4766107)", rownames(GT))] <- "grey"
-ha <- rowAnnotation(foo = anno_text(rownames(GT), gp =gpar(col=textCols)))
-p <- Heatmap(GT, col=setNames(RColorBrewer::brewer.pal(length(names(table(GT))), "Set1"), names(table(GT))),
-             column_split = annotation_col[match(colnames(GT), annotation_col$name), "patient ID"], name="Genotype",
-             row_names_max_width=unit(20, "cm"), right_annotation = ha, show_row_names=FALSE)
+ha <- rowAnnotation(foo = anno_text(rownames(GT), gp = gpar(col=textCols)))
+p <- Heatmap(GT,
+             col = setNames(brewer.pal(length(names(table(GT))), "Set1"),
+                            names(table(GT))),
+             column_split = annotation_col[match(colnames(GT), annotation_col$name),
+                                           "patient ID"],
+             name = "Genotype",
+             row_names_max_width=unit(20, "cm"),
+             right_annotation = ha, show_row_names=FALSE)
 p_gg <- grid.grabExpr(draw(p))
 save_plot(path(resDir, "knownGenes.pdf"), p_gg,
           base_height=20, base_width = 40)
 
 ### Without Control
 patientTokeep <- grep("patient", colnames(GT))
-p <- Heatmap(GT[ ,patientTokeep], col=setNames(RColorBrewer::brewer.pal(length(names(table(GT[ ,patientTokeep]))),
-                                                                        "Set1"), names(table(GT[ ,patientTokeep]))),
-             column_split = annotation_col[match(colnames(GT), annotation_col$name), "patient ID"][patientTokeep], name="Genotype",
-             row_names_max_width=unit(20, "cm"), right_annotation = ha, show_row_names=FALSE)
+p <- Heatmap(GT[ ,patientTokeep],
+             col = setNames(brewer.pal(length(names(table(GT[ ,patientTokeep]))), "Set1"),
+                            names(table(GT[ ,patientTokeep]))),
+             column_split = annotation_col[match(colnames(GT), annotation_col$name),
+                                           "patient ID"][patientTokeep],
+             name = "Genotype",
+             row_names_max_width=unit(20, "cm"),
+             right_annotation = ha, show_row_names=FALSE)
 p_gg <- grid.grabExpr(draw(p))
 save_plot(path(resDir, "knownGenes_Patients.pdf"), p_gg,
           base_height=20, base_width = 30)
@@ -95,20 +108,38 @@ GT_curated <- GT[loci2Keep, ]
 textCols <- rep("black", nrow(GT_curated))
 textCols[grep("(COSM28043|COSM5945302|COSM28040|COSM1594211|COSM3760322|COSM1673705)", rownames(GT_curated))] <- "blue"
 textCols[grep("(COSM1737944|COSM4766107)", rownames(GT_curated))] <- "grey"
-ha <- rowAnnotation(foo = anno_text(rownames(GT_curated), gp =gpar(col=textCols)))
-p <- Heatmap(GT_curated, col=setNames(RColorBrewer::brewer.pal(length(names(table(GT))), "Set1"), names(table(GT))),
-             column_split = annotation_col[match(colnames(GT_curated), annotation_col$name), "patient ID"], name="Genotype",
-             row_names_max_width=unit(20, "cm"), right_annotation = ha, show_row_names=FALSE)
+ha <- rowAnnotation(foo = anno_text(rownames(GT_curated), gp = gpar(col=textCols)))
+p <- Heatmap(GT_curated,
+             col = setNames(brewer.pal(length(names(table(GT))), "Set1"),
+                            names(table(GT))),
+             column_split = annotation_col[match(colnames(GT_curated),
+                                                 annotation_col$name), "patient ID"],
+             name = "Genotype",
+             row_names_max_width=unit(20, "cm"),
+             right_annotation = ha, show_row_names=FALSE)
 p_gg <- grid.grabExpr(draw(p))
 save_plot(path(resDir, "knownGenes_curated.pdf"), p_gg,
                base_height=10, base_width = 40)
 
 ### Without Control
+mutationTypes <- recode(textCols, "black"="Pathogenic",
+                        "blue" = "Neutral", "grey" = "Unclassified")
+right_annotation <- HeatmapAnnotation(df = data.frame("Mutation_type"=mutationTypes),
+                                      col=list("Mutation_type" = c("Pathogenic"="black",
+                                                                   "Neutral"="blue",
+                                                                   "Unclassified"="grey")),
+                                      which = "row")
+
 patientTokeep <- grep("patient", colnames(GT_curated))
-p <- Heatmap(GT_curated[ ,patientTokeep], col=setNames(RColorBrewer::brewer.pal(length(names(table(GT_curated[ ,patientTokeep]))),
-                                                                        "Set1"), names(table(GT_curated[ ,patientTokeep]))),
-             column_split = annotation_col[match(colnames(GT_curated), annotation_col$name), "patient ID"][patientTokeep], name="Genotype",
-             row_names_max_width=unit(20, "cm"), right_annotation = ha, show_row_names=FALSE)
+p <- Heatmap(GT_curated[ ,patientTokeep],
+             col = setNames(brewer.pal(length(names(table(GT_curated[ ,patientTokeep]))), "Set1"),
+                            names(table(GT_curated[ ,patientTokeep]))),
+             column_split = annotation_col[match(colnames(GT_curated),
+                                                 annotation_col$name),
+                                           "patient ID"][patientTokeep],
+             name="Genotype",
+             row_names_max_width = unit(20, "cm"),
+             right_annotation = right_annotation, show_row_names=TRUE)
 p_gg <- grid.grabExpr(draw(p))
 save_plot(path(resDir, "knownGenes_curated_Patients.pdf"), p_gg,
           base_height=7, base_width = 21)
@@ -125,19 +156,26 @@ textCols[grep("(COSM28043|COSM5945302|COSM28040|COSM1594211|COSM3760322|COSM1673
 textCols[grep("(COSM1737944|COSM4766107)", rownames(GT_curated))] <- "grey"
 ha <- rowAnnotation(foo = anno_text(rownames(GT_curated), gp =gpar(col=textCols)))
 
-p <- Heatmap(toPlot, column_split = annotation_col[match(colnames(GT_curated), annotation_col$name), "patient ID"],
+p <- Heatmap(toPlot,
+             column_split = annotation_col[match(colnames(GT_curated),
+                                                 annotation_col$name),
+                                           "patient ID"],
              name="Allel Fraction",
              row_names_max_width=unit(20, "cm"), cluster_rows=FALSE,
-             cluster_columns=FALSE, right_annotation = ha, show_row_names=FALSE)
+             cluster_columns=FALSE, right_annotation = right_annotation, show_row_names=TRUE)
 p_gg <- grid.grabExpr(draw(p))
 save_plot(path(resDir, "knownGenes_AllelFraction_curated.pdf"), p_gg,
                base_height=10, base_width = 40)
 ### Without Control
 patientTokeep <- grep("patient", colnames(toPlot))
-p <- Heatmap(toPlot[, patientTokeep], column_split = annotation_col[match(colnames(GT_curated), annotation_col$name), "patient ID"][patientTokeep],
+p <- Heatmap(toPlot[, patientTokeep],
+             column_split = annotation_col[match(colnames(GT_curated),
+                                                 annotation_col$name),
+                                           "patient ID"][patientTokeep],
              name="Allel Fraction",
              row_names_max_width=unit(20, "cm"), cluster_rows=FALSE,
-             cluster_columns=FALSE, right_annotation = ha, show_row_names=FALSE)
+             cluster_columns=FALSE,
+             right_annotation = right_annotation, show_row_names=TRUE)
 p_gg <- grid.grabExpr(draw(p))
 save_plot(path(resDir, "knownGenes_AllelFraction_curated_Patients.pdf"), p_gg,
-          base_height=10, base_width = 30)
+          base_height=7, base_width = 21)
