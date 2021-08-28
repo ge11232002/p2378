@@ -1,16 +1,19 @@
 # heatmap from CountQC
 library(SummarizedExperiment)
 library(ezRun)
-library(readr)
-library(dplyr)
+library(tidyverse)
 library(pheatmap)
 library(cowplot)
-setwd("/home/gtan/analysis/p2378-Fabienne/Heatmap")
+library(here)
+library(fs)
+resDir <- here("Results", "RNA-seq", "Heatmap")
+dir_create(resDir)
 
 ## fix names
-fixNameDT <- read_tsv("fixNames.tsv")
-fixNameDT2 <- read_tsv("fixName2.tsv")
-fixNameDT <- left_join(fixNameDT, fixNameDT2, by=c("Patient ID, final nomenclature"="Old ID"))
+fixNameDT <- read_tsv(path(resDir, "fixNames.tsv"))
+fixNameDT2 <- read_tsv(path(resDir, "fixName2.tsv"))
+fixNameDT <- left_join(fixNameDT, fixNameDT2,
+                       by=c("Patient ID, final nomenclature"="Old ID"))
 
 ## CountQC
 # https://fgcz-sushi.uzh.ch/data_set/p2378/35914
@@ -21,10 +24,9 @@ output <- metadata(rawData)$output
 param <- metadata(rawData)$param
 seqAnno <- data.frame(rowData(rawData), row.names=rownames(rawData),
                       check.names = FALSE, stringsAsFactors=FALSE)
-dataset <- data.frame(colData(rawData), 
+dataset <- data.frame(colData(rawData),
                       row.names=colnames(rawData), check.names = FALSE,
                       stringsAsFactors=FALSE)
-
 
 types = data.frame(row.names=rownames(seqAnno))
 for (nm in setdiff(na.omit(unique(seqAnno$type)), "")){
@@ -42,7 +44,7 @@ signal = shiftZeros(getSignal(rawData), param$minSignal)
 presentFlag = assays(rawData)$presentFlag
 signalRange = range(signal, na.rm=TRUE)
 log2Signal = log2(signal)
-isPresent = ezPresentFlags(assays(rawData)$counts, presentFlag=presentFlag, 
+isPresent = ezPresentFlags(assays(rawData)$counts, presentFlag=presentFlag,
                            param=param, isLog=metadata(rawData)$isLog)
 signalCond = 2^averageColumns(log2Signal, by=conds)
 isPresentCond = averageColumns(isPresent, by=conds) >= 0.5
@@ -85,24 +87,29 @@ colors=getBlueRedScale()
 ## Including BC samples
 toPlot <- xNormed[use, ]
 foo <- left_join(as_tibble(design, rownames = "id"),
-                 fixNameDT, by=c("PatientID"="Patient ID on transcriptomics heatmap"))
-annotation_col <- data.frame(row.names = foo$id,
-                             "cell type"=sub(".*(NO|HU)_", "", foo$Condition),                             
-                             "class therapy progressed"=paste(recode(sub("_.*$", "", foo$Condition), c="control", p="patient"),
-                                                              sub("_.*$", "", sub("(p|c)_", "", foo$Condition)),
-                                                              foo$Progressed, sep="."),
-                             "patient ID"=foo$`New ID`,
-                             check.names = FALSE)
+                 fixNameDT,
+                 by=c("PatientID"="Patient ID on transcriptomics heatmap"))
+annotation_col <- data.frame(
+  row.names = foo$id,
+  "cell type" = sub(".*(NO|HU)_", "", foo$Condition),
+  "class therapy progressed" = paste(recode(sub("_.*$", "", foo$Condition),
+                                            c="control", p="patient"),
+                                     sub("_.*$", "", sub("(p|c)_", "", foo$Condition)),
+                                     foo$Progressed, sep="."),
+  "patient ID" = foo$`New ID`,
+  check.names = FALSE)
 annotation_col$name <- paste(annotation_col$`cell type`,
                              annotation_col$`class therapy progressed`,
                              annotation_col$`patient ID`, sep="~")
 
-ann_colors <- readRDS("ann_colors.rds")
-ann_colors$`patient ID` <- ann_colors$`patient ID`[names(ann_colors$`patient ID`) %in% annotation_col$`patient ID`]
+ann_colors <- readRDS(path(resDir, "ann_colors.rds"))
+ann_colors$`patient ID` <- ann_colors$`patient ID`[names(ann_colors$`patient ID`) %in%
+                                                     annotation_col$`patient ID`]
 
 colnames(toPlot) <- annotation_col[colnames(toPlot), "name"]
 rownames(annotation_col) <- annotation_col$name
 annotation_col$name <- NULL
+annotation_col$`patient ID` <- NULL
 
 pheatmap(toPlot, color=colors, clustering_method="ward.D2",
          breaks=seq(from=lim[1], to=lim[2], length.out=257),
@@ -110,7 +117,7 @@ pheatmap(toPlot, color=colors, clustering_method="ward.D2",
          clustering_callback = callback,
          treeheight_row=0, annotation_col=annotation_col,
          annotation_colors = ann_colors,
-         filename="cluster-heatmap_withoutBC.pdf",
+         filename=path(resDir, "cluster-heatmap_withoutBC.pdf"),
          height=10, width=15
          )
 
@@ -128,7 +135,7 @@ ezMdsGG2 <- function(signal, design, ndim=2, main="MDS plot"){
   if(ndim != 2){
     stop("ggplot2 only produces 2D plot")
   }
-  
+
   y = DGEList(counts=signal, group=colnames(signal))
   mds = plotMDS(y, plot=FALSE, ndim=ndim)
   toPlot <- data.frame(samples=colnames(signal),
@@ -147,7 +154,7 @@ ezMdsGG2 <- function(signal, design, ndim=2, main="MDS plot"){
   }else{
     p <- ggplot(toPlot, aes(`Leading logFC dim1`, `Leading logFC dim2`)) +
       geom_point(aes_string(colour=sym(colnames(design)[1])),
-                 size = 3) + 
+                 size = 3) +
       ggtitle(main)
   }
   p
@@ -155,6 +162,7 @@ ezMdsGG2 <- function(signal, design, ndim=2, main="MDS plot"){
 p <- ezMdsGG2(signal=x, design=design2, ndim=2)
 p <- p + scale_colour_manual(values=ann_colors$`cell type`) +
   theme_half_open() + background_grid()
-save_plot(filename="MDS_PresentGenes_withoutBC.pdf", p, base_height = 5)
+save_plot(filename=path(resDir, "MDS_PresentGenes_withoutBC.pdf"), p,
+          base_height = 5)
 
-save.image("withoutBC.RData")
+save.image(path(resDir, "withoutBC.RData"))
