@@ -1,0 +1,23 @@
+#tmp6 <-read_tsv("data/20180921_132014_SA_1807FMA_HSPCPV6fr_SNP_acrexp_Report.xls")
+tmp5 <-read_tsv("data/20180923_230031_SA_1807FMA_HSPCPV5frwoisolw_SNP_Report.xls")
+#nrow(tmp6)
+nrow(tmp5)
+annotation <- readxl::read_xlsx("Annotation/Proteomics Samples for Data Analysis_Annotation_final.xlsx")
+colnames(annotation) <- make.names(colnames(annotation))
+
+with(annotation, table(Patient.Sex))
+with(annotation, table(Diagnosis))
+with(annotation, table(Celltype))
+with(annotation, table(Class , Diagnosis))
+with(annotation, table(Class , Therapy))
+
+head(annotation)
+annotation$Filename %in% tmp5$R.FileName
+
+dataSet <-inner_join(annotation, tmp5, by=c("Filename"= "R.FileName"))
+nrow(tmp5) == nrow(dataSet)
+
+write_tsv(dataSet, path="data/AnnotatedData.tsv")
+
+
+

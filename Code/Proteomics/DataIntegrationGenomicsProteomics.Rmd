@@ -1,0 +1,214 @@
+---
+output:
+  pdf_document: 
+    fig_width: 7
+    fig_height: 7
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r include=FALSE}
+library(readr)
+library(prora)
+library(tidyverse)
+knitr::opts_chunk$set(echo = FALSE, include=FALSE)
+```
+
+```{r}
+genomics <- readr::read_tsv("Count_QC-rpkm_V2.txt")
+head(genomics)
+proteomics <- readxl::read_xlsx("second_Draft_V4_WithContaminants/path_qc/transformed_ProteinIntensities_WIDE.xlsx")
+```
+
+Some protein_Id have more than 2 entries - we separate them into rows generating duplicated measurements.
+
+```{r}
+proteomics$row_Id <- 1:nrow(proteomics)
+dim(proteomics)
+prot2 <- proteomics %>% tidyr::separate_rows(protein_Id, sep = ";")
+dim( prot2 )
+```
+
+Here, are the duplicated rows:
+
+```{r}
+xx <- table(prot2$row_Id)
+xx <- as.array(xx)
+xx <- xx[xx > 1]
+duplicated <- as.numeric(names(xx))
+(proteomics[duplicated[1],])$protein_Id
+
+```
+
+
+#quantable::write.vector(proteomics$protein_Id, file = "tmp.txt")
+
+Now we map the uniprot Id's to ensemble. Some of the uniprot ID's have multiple ensemble id's assigned (up to 14)
+
+
+```{r}
+prot_mapped_table <- prora::map_ids_uniprot(prot2,ID_col = "protein_Id", to = "ENSEMBL_ID")
+plot(table(prot_mapped_table$protein_Id))
+xx <- sort(as.array(table(prot_mapped_table$protein_Id)), decreasing = TRUE)
+(xx[xx > 1])
+
+```
+
+Some of the uniprot ID's were not mapped to ensemble ID's.
+
+```{r}
+prot_mapped_table$protein_Id[is.na(prot_mapped_table$ENSEMBL_ID)]
+
+```
+
+
+Now we check which of the ensemble ids, obtained using the uniprot mapping service, are also present in the genomic data.
+
+The table below lists all uniprot ID's which are not mapped to genomic data. NA-indicates that no Ensemble ID mapping was available for the uniprot ID, while the shown ensemble ID's are not present in the genomic data.
+I am a bit surprised why so many Ensemble_ID's could not be found in the genomic data although we have a corresponding protein product (441 Ensemble Id's). Is there a way to check if those Ensemble  ID's are recently introduced, 
+while the db you used is older?
+
+```{r}
+sum(!na.omit(prot_mapped_table$ENSEMBL_ID) %in% genomics$`Feature ID`)
+```
+
+```{r eval=FALSE, include=FALSE}
+knitr::kable(prot_mapped_table[!prot_mapped_table$ENSEMBL_ID %in% genomics$`Feature ID`, ] %>% select("protein_Id", "ENSEMBL_ID"))
+
+```
+
+
+```{r}
+cnamprot <- gsub("CMP/MEP","CMP_MEP",colnames(prot_mapped_table)[4:ncol(prot_mapped_table)])
+cnamprot <- gsub("Prt","PID",cnamprot)
+cnamprot <- gsub("757/767PID","PID757/767",cnamprot)
+cnamprot <- gsub("304PID","PID304", cnamprot)
+cnamprot <- gsub("240PID", "PID240", cnamprot)
+
+grep("CMP_MEP~control.NO.no~Haemo", cnamprot)
+
+cnamprot <- gsub("CMP_MEP~control.NO.no~Haemo","CMP_MEP~control.NO.no~PID392/732/777/790", cnamprot)
+cnamprot <- gsub("CMP_MEP~patient.NO.no~PID64","CMP_MEP~patient.NO.no.~PID67/206/293", cnamprot)
+cnamprot <- gsub("HSC~control.NO.no~Haemo", "HSC~control.NO.no~PID392/732/777/790", cnamprot)
+cnamprot <- gsub("HSC~patient.NO.no~PID64", "HSC~patient.NO.no~PID67/206/293", cnamprot)
+
+mean(duplicated(cnamprot))
+
+colnames(prot_mapped_table)[4:ncol(prot_mapped_table)] <- cnamprot
+
+cnamgen <- colnames(genomics)[-1]
+cnamprot[!cnamprot %in% cnamgen]
+
+cnamgen[!cnamgen %in% cnamprot]
+
+
+
+prot_mapped_table %>% select("protein_Id", "ENSEMBL_ID") %>% duplicated %>% mean
+
+prot_mapped_table <- prot_mapped_table %>% select(-one_of("PG.ProteinAccessions","row_Id"))
+
+
+prot_long <- tidyr::gather(prot_mapped_table, key = "sample",
+  value = "medpolish", -(1:2) )
+
+gene_long <- tidyr::gather(genomics, key = "sample",
+  value = "intensity", -1 )
+
+colnames(gene_long)[1] <- "ENSEMBL_ID"
+
+gene_long %>% select(ENSEMBL_ID, sample) %>% duplicated %>% mean()
+prot_long %>% select(ENSEMBL_ID, sample) %>% duplicated %>% mean()
+#gene_long$ENSEMBL_ID <- as.numeric(sub("^ENSG0+","", gene_long$ENSEMBL_ID))
+both_data <- inner_join(prot_long, gene_long)
+dim(both_data)
+both_data %>% select(ENSEMBL_ID, sample) %>% duplicated %>% mean()
+both_data %>% select(ENSEMBL_ID, protein_Id, sample) %>% duplicated %>% mean()
+
+both_data <- both_data %>% unite("E_P", ENSEMBL_ID, protein_Id , sep = "~")
+geneWide  <- both_data %>% select(-one_of("medpolish")) %>% tidyr::spread(sample , intensity )
+geneMat <- as.matrix(geneWide[,-1])
+rownames(geneMat) <- geneWide[[1]]
+
+protWide <- both_data %>% select(-one_of("intensity")) %>%
+  tidyr::spread(sample , medpolish )
+protMat <- as.matrix(protWide[,-1])
+rownames(protMat) <- protWide[[1]]
+```
+
+# Protein mRNA correlations
+
+```{r proteinCors, fig.cap="density of protein mRNA correlation", include=TRUE}
+corRow <- function(i, protMat, geneMat){
+  res <- cor(protMat[i,], geneMat[i,], use = "pairwise.complete.obs",
+             method = "spearman")
+  return(res)
+}
+
+protCors <- sapply(1:nrow(protMat), corRow, protMat, geneMat)
+length(protCors)
+names(protCors) <- rownames(protMat)
+
+plot(density(na.omit(protCors)))
+abline(v = 0, col = 2 )
+abline(v = summary(na.omit(protCors)), col = "grey")
+summary(na.omit(protCors))
+```
+
+```{r saveCorrelations}
+protCorsTab <- as_tibble(protCors, rownames = "row.names")
+writexl::write_xlsx(protCorsTab,"protCorsTab.xlsx")
+
+```
+
+
+```{r fig.cap="negative correlation", include=TRUE}
+anti <- names(sort(protCors)[1:10])
+
+par(mfrow = c(2,2))
+plot(protMat[anti[1],], geneMat[anti[1],], main = anti[1])
+plot(protMat[anti[2],], geneMat[anti[2],], main = anti[2])
+plot(protMat[anti[3],], geneMat[anti[3],], main = anti[3])
+plot(protMat[anti[4],], geneMat[anti[4],], main = anti[4])
+
+```
+
+
+```{r fig.cap="positive correlation", include=TRUE}
+anti <- names(sort(protCors, decreasing = TRUE)[1:10])
+par(mfrow = c(2,2))
+plot(protMat[anti[1],], geneMat[anti[1],], main = anti[1])
+plot(protMat[anti[2],], geneMat[anti[2],], main = anti[2])
+plot(protMat[anti[3],], geneMat[anti[3],], main = anti[3])
+plot(protMat[anti[4],], geneMat[anti[4],], main = anti[4])
+
+```
+
+
+
+# Sample Correlations
+
+```{r }
+
+res <- cor(protMat, geneMat, use = "pairwise.complete.obs", method = "spearman")
+
+
+```
+
+
+```{r hmmap1,fig.caption= "sample correlation heatmap", fig.width=10, fig.height=10, include=TRUE}
+(pheatmap::pheatmap(res, cluster_cols = FALSE,
+                         cluster_rows = FALSE,
+                         color = colorRampPalette(rev(RColorBrewer::brewer.pal(n = 7, name =
+  "YlGnBu")))(100)))
+
+```
+
+
+```{r hmmap2, fig.caption= "sample correlation heatmap with clustering", fig.width=10, fig.height=10, include=TRUE}
+(pheatmap::pheatmap(res ,
+                    color = colorRampPalette(rev(RColorBrewer::brewer.pal(n = 7, name =
+  "YlGnBu")))(100)))
+
+
+```
