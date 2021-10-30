@@ -10,3 +10,7 @@ ans <- dataset %>% left_join(md5sum, by = c("R1"="X3"))
 write_tsv(ans, "GEO.txt")
 
 
+library(readxl)
+counts <- read_excel("/Volumes/Transcend/p2378_24h/Count_QC-raw-count.xlsx")
+counts <- counts %>% select(`Feature ID`, contains("24hrs"))
+write_tsv(counts, "Count_QC-raw-count.txt")
